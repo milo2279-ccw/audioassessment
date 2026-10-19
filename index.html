@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小學科學科實作評估 - 語音登分與記錄系統</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome 圖示庫 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- SheetJS (xlsx.full.min.js) 供匯出標準 Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Google Fonts: Noto Sans TC & Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans TC', sans-serif;
+    }
+    /* 動畫效果 */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.4; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .recording-pulse {
+      animation: pulse-ring 1.5s infinite ease-in-out;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- 頂部導航欄 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100">
+          <i class="fa-solid fa-ruler-combined text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">小學科學科實作評估登分系統</h1>
+          <p class="text-xs text-indigo-600 font-medium">直尺音調探究 · 即時語音錄入與匯出</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3">
+        <!-- 狀態徽章 -->
+        <span id="speechSupportBadge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <i class="fa-solid fa-microphone"></i> 語音引擎就緒
+        </span>
+        <!-- 匯出 Excel 按鈕 -->
+        <button id="exportExcelBtn" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-emerald-200">
+          <i class="fa-solid fa-file-excel"></i>
+          <span>下載 Excel 表</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主要操作區 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- 左側：話音輸入與表單登分區域 (佔 5 欄) -->
+    <div class="lg:col-span-5 space-y-5">
+
+      <!-- 語音控制器卡片 -->
+      <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-indigo-500 rounded-full opacity-10 pointer-events-none"></div>
+
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs tracking-wider uppercase font-semibold text-indigo-200 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            話音快速登分
+          </span>
+          <!-- 語言切換 -->
+          <select id="voiceLangSelect" class="bg-indigo-950/60 border border-indigo-500/40 text-xs text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300">
+            <option value="zh-HK" selected>粵語 (廣東話)</option>
+            <option value="zh-TW">國語 (普通話)</option>
+            <option value="zh-CN">普通話 (簡體)</option>
+          </select>
+        </div>
+
+        <!-- 麥克風核心按鈕 -->
+        <div class="flex flex-col items-center justify-center my-3">
+          <button id="toggleRecordBtn" class="w-20 h-20 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white flex items-center justify-center text-3xl shadow-xl transition-all duration-300 focus:outline-none active:scale-95 border-4 border-indigo-400/30">
+            <i id="micIcon" class="fa-solid fa-microphone"></i>
+          </button>
+          <p id="recordStatus" class="mt-3 text-xs text-indigo-200 font-medium tracking-wide">按一下麥克風開始說話</p>
+        </div>
+
+        <!-- 即時語音辨識反饋框 -->
+        <div class="mt-4 bg-slate-900/60 backdrop-blur rounded-xl p-3 border border-indigo-400/20 text-xs">
+          <div class="flex items-center justify-between text-indigo-300 mb-1 text-[11px]">
+            <span><i class="fa-solid fa-wave-square mr-1"></i>偵測到之語音文本：</span>
+            <span id="aiParsedBadge" class="hidden text-amber-300"><i class="fa-solid fa-wand-magic-sparkles"></i> 已自動匹配</span>
+          </div>
+          <p id="speechLiveTranscript" class="text-slate-100 min-h-[38px] leading-relaxed italic text-xs">「請讀出：學生姓名、班別、學號，以及 5 個 1 至 4 的分數」</p>
+        </div>
+
+        <!-- 口述範例提示 -->
+        <div class="mt-3 bg-indigo-950/40 rounded-lg p-2.5 text-[11px] text-indigo-200 border border-indigo-500/20 flex items-start gap-2">
+          <i class="fa-solid fa-circle-info text-amber-400 mt-0.5"></i>
+          <div>
+            <p class="font-semibold text-white">語音範例（支援連讀評語）：</p>
+            <p>「陳小明，4A班，12號，4分、3分、4分、3分、4分，評語：操作非常熟練」</p>
+            <p class="text-slate-300">若無評語可直接說：「……4分，評語：沒有」或「冇評語」</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 學生資料與 5 項詳細得分編輯表單 -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h2 class="font-bold text-slate-800 flex items-center gap-2 text-sm">
+            <i class="fa-solid fa-user-graduate text-indigo-600"></i>
+            學生考評資料確認
+          </h2>
+          <span class="text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded-full" id="formModeText">新考生</span>
+        </div>
+
+        <!-- 學生基礎資料 -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="col-span-1">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">班別</label>
+            <input type="text" id="inputClass" placeholder="如 4A / 四乙" class="w-full text-xs font-medium px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+          <div class="col-span-1">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">學號 (號數)</label>
+            <input type="text" id="inputNumber" placeholder="如 12" class="w-full text-xs font-medium px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+          <div class="col-span-1">
+            <label class="block text-xs font-semibold text-slate-600 mb-1">學生姓名</label>
+            <input type="text" id="inputName" placeholder="如 陳小明" class="w-full text-xs font-medium px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+          </div>
+        </div>
+
+        <!-- 5 項評核重點打分區 (每項 1-4 分) -->
+        <div class="space-y-3 pt-2">
+          <label class="text-xs font-bold text-slate-700 flex items-center justify-between">
+            <span>實作評估 5 項重點得分 (每項 1~4 分)</span>
+            <span class="text-indigo-600 cursor-pointer text-[11px] underline" id="openRubricModalBtn"><i class="fa-solid fa-circle-question mr-1"></i>查看評分準則 (Rubric)</span>
+          </label>
+
+          <!-- 項目 1: 工具選擇與理據 -->
+          <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+              <span>1. 工具選擇與理據 (器材應用)</span>
+              <span class="text-indigo-700 font-bold" id="badgeQ1">0 / 4 分</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 score-btn-group" data-q="q1">
+              <button type="button" data-val="1" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">1分</button>
+              <button type="button" data-val="2" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">2分</button>
+              <button type="button" data-val="3" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">3分</button>
+              <button type="button" data-val="4" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">4分</button>
+            </div>
+          </div>
+
+          <!-- 項目 2: 訂立伸出長度 -->
+          <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+              <span>2. 訂立伸出長度 (探究規劃)</span>
+              <span class="text-indigo-700 font-bold" id="badgeQ2">0 / 4 分</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 score-btn-group" data-q="q2">
+              <button type="button" data-val="1" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">1分</button>
+              <button type="button" data-val="2" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">2分</button>
+              <button type="button" data-val="3" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">3分</button>
+              <button type="button" data-val="4" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">4分</button>
+            </div>
+          </div>
+
+          <!-- 項目 3: 桌上尺子固定 -->
+          <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+              <span>3. 桌上尺子固定 (操作技巧)</span>
+              <span class="text-indigo-700 font-bold" id="badgeQ3">0 / 4 分</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 score-btn-group" data-q="q3">
+              <button type="button" data-val="1" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">1分</button>
+              <button type="button" data-val="2" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">2分</button>
+              <button type="button" data-val="3" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">3分</button>
+              <button type="button" data-val="4" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">4分</button>
+            </div>
+          </div>
+
+          <!-- 項目 4: 撥動力度控制 -->
+          <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+              <span>4. 撥動力度控制 (控制變因)</span>
+              <span class="text-indigo-700 font-bold" id="badgeQ4">0 / 4 分</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 score-btn-group" data-q="q4">
+              <button type="button" data-val="1" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">1分</button>
+              <button type="button" data-val="2" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">2分</button>
+              <button type="button" data-val="3" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">3分</button>
+              <button type="button" data-val="4" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">4分</button>
+            </div>
+          </div>
+
+          <!-- 項目 5: 數據記錄與結論 -->
+          <div class="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+              <span>5. 數據記錄與結論 (整理分析)</span>
+              <span class="text-indigo-700 font-bold" id="badgeQ5">0 / 4 分</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 score-btn-group" data-q="q5">
+              <button type="button" data-val="1" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">1分</button>
+              <button type="button" data-val="2" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">2分</button>
+              <button type="button" data-val="3" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">3分</button>
+              <button type="button" data-val="4" class="py-1.5 text-xs rounded-lg border font-semibold text-slate-700 hover:bg-slate-200 bg-white">4分</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 教師評語輸入欄位 (支援語音輸入或手動填寫) -->
+        <div class="pt-2">
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <i class="fa-solid fa-comment-dots text-indigo-600"></i>
+              教師評語 / 實驗表現觀察
+            </label>
+            <span class="text-[11px] text-slate-400">可語音續說或點擊快捷評語</span>
+          </div>
+          <textarea id="inputComment" rows="2" placeholder="讀完 5 個分數後，口述「評語：……」即可自動填入；若無特殊評語可說「沒有」" class="w-full text-xs font-medium p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white"></textarea>
+          <!-- 快捷常見評語標籤 -->
+          <div class="flex flex-wrap gap-1.5 mt-1.5 text-[11px]">
+            <button type="button" class="quick-comment-chip px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 border border-slate-200 transition">操作熟練規範</button>
+            <button type="button" class="quick-comment-chip px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 border border-slate-200 transition">按尺穩定無雜音</button>
+            <button type="button" class="quick-comment-chip px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 border border-slate-200 transition">能清晰解釋器材理據</button>
+            <button type="button" class="quick-comment-chip px-2 py-0.5 rounded-md bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 border border-slate-200 transition">撥動力度需更均勻</button>
+            <button type="button" class="quick-comment-chip px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-200 transition">沒有</button>
+          </div>
+        </div>
+
+        <!-- 總分即時展示面板 -->
+        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <span class="text-xs text-indigo-700 font-semibold uppercase tracking-wider">自動累計總分</span>
+            <div class="text-2xl font-black text-indigo-900" id="totalScorePreview">0 <span class="text-xs font-medium text-slate-500">/ 20 分</span></div>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-indigo-600 font-medium" id="performanceLevel">尚未評分</span>
+            <p class="text-[11px] text-slate-400">滿分為 20 分</p>
+          </div>
+        </div>
+
+        <!-- 表單操作按鈕 -->
+        <div class="flex gap-2 pt-2">
+          <button id="saveRecordBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition shadow shadow-indigo-100 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <span id="saveBtnLabel">儲存考生成績</span>
+          </button>
+          <button id="clearFormBtn" class="px-4 py-2.5 border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-semibold transition">
+            重設
+          </button>
+        </div>
+
+        <!-- 操作訊息提示條 -->
+        <div id="statusToast" class="hidden text-xs py-2 px-3 rounded-lg flex items-center gap-2"></div>
+      </div>
+    </div>
+
+    <!-- 右側：成績總覽表格與統計看板 (佔 7 欄) -->
+    <div class="lg:col-span-7 space-y-5">
+
+      <!-- 統計指標卡片 -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-users"></i>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 font-medium">已評人數</p>
+            <p class="text-lg font-bold text-slate-800" id="statStudentCount">0</p>
+          </div>
+        </div>
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-chart-line"></i>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 font-medium">平均總分</p>
+            <p class="text-lg font-bold text-slate-800" id="statAvgScore">0.0</p>
+          </div>
+        </div>
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-trophy"></i>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 font-medium">最高分</p>
+            <p class="text-lg font-bold text-slate-800" id="statMaxScore">0</p>
+          </div>
+        </div>
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-medal"></i>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 font-medium">優異率 (≥16)</p>
+            <p class="text-lg font-bold text-slate-800" id="statPassRate">0%</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 成績列表主卡片 -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[580px]">
+        <!-- 列表過濾與操作列 -->
+        <div class="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-sm text-slate-800">登分名冊記錄</span>
+            <span class="text-xs bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-full" id="recordBadge">0 筆</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- 搜尋框 -->
+            <div class="relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+              <input type="text" id="searchInput" placeholder="搜尋學生或班別..." class="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none w-36 sm:w-48 transition bg-white">
+            </div>
+
+            <!-- 清除全部記錄 -->
+            <button id="clearAllBtn" class="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200 transition" title="清除所有資料">
+              <i class="fa-solid fa-trash-can mr-1"></i>清空
+            </button>
+          </div>
+        </div>
+
+        <!-- 表格區域 (可捲動) -->
+        <div class="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="bg-slate-100/80 sticky top-0 z-10 text-slate-600 font-semibold border-b border-slate-200">
+              <tr>
+                <th class="py-2.5 px-3">班別</th>
+                <th class="py-2.5 px-2">座號</th>
+                <th class="py-2.5 px-3">姓名</th>
+                <th class="py-2.5 px-1.5 text-center" title="1. 工具選擇與理據">1.器材</th>
+                <th class="py-2.5 px-1.5 text-center" title="2. 訂立伸出長度">2.長度</th>
+                <th class="py-2.5 px-1.5 text-center" title="3. 桌上尺子固定">3.固定</th>
+                <th class="py-2.5 px-1.5 text-center" title="4. 撥動力度控制">4.力度</th>
+                <th class="py-2.5 px-1.5 text-center" title="5. 數據記錄與結論">5.結論</th>
+                <th class="py-2.5 px-2.5 text-center font-bold text-indigo-700">總分 (/20)</th>
+                <th class="py-2.5 px-3">教師評語</th>
+                <th class="py-2.5 px-3 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="recordsTableBody" class="divide-y divide-slate-100">
+              <!-- 動態生成考生成績列 -->
+            </tbody>
+          </table>
+
+          <!-- 空資料狀態 -->
+          <div id="emptyState" class="flex flex-col items-center justify-center p-12 text-center">
+            <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-2xl mb-3">
+              <i class="fa-solid fa-clipboard-list"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-slate-700">尚無評估記錄</h3>
+            <p class="text-xs text-slate-400 mt-1 max-w-xs">點選左側話音麥克風即可快速開始登分，或直接由表單輸入。</p>
+          </div>
+        </div>
+
+        <!-- 表格底部快速匯出提示 -->
+        <div class="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+          <span><i class="fa-solid fa-shield-halved text-emerald-500 mr-1"></i>資料即時自動暫存於本機瀏覽器</span>
+          <button id="quickExportCsvBtn" class="text-slate-600 hover:text-indigo-600 underline font-medium">備份為 CSV</button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- 評分準則 (Rubric) 彈出式對照視窗 -->
+  <div id="rubricModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-indigo-50/50">
+        <div class="flex items-center gap-2 text-indigo-900">
+          <i class="fa-solid fa-book-open text-indigo-600 text-lg"></i>
+          <h3 class="font-bold text-base">直尺音調探究實作評估評分標準 (Rubric)</h3>
+        </div>
+        <button id="closeRubricModalBtn" class="w-8 h-8 rounded-lg hover:bg-slate-200 text-slate-500 flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="p-6 overflow-y-auto custom-scrollbar text-xs space-y-4">
+        <p class="text-slate-600 bg-amber-50 p-3 rounded-xl border border-amber-200 text-amber-900">
+          <i class="fa-solid fa-circle-info mr-1 text-amber-600"></i>
+          評分說明：本評估共包含 5 個評核重點，每項表現等級為 1 至 4 分，滿分為 20 分。
+        </p>
+
+        <div class="overflow-x-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <th class="p-3 w-1/5">評核重點</th>
+                <th class="p-3 w-1/5 text-rose-700 bg-rose-50/50">1 分（需改進）</th>
+                <th class="p-3 w-1/5 text-amber-700 bg-amber-50/50">2 分（基礎）</th>
+                <th class="p-3 w-1/5 text-blue-700 bg-blue-50/50">3 分（滿意）</th>
+                <th class="p-3 w-1/5 text-emerald-700 bg-emerald-50/50">4 分（優異）</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 leading-relaxed text-slate-600">
+              <tr>
+                <td class="p-3 font-bold text-slate-800 bg-slate-50">1. 工具選擇與理據<br><span class="text-[10px] text-slate-400 font-normal">(器材應用)</span></td>
+                <td class="p-3 bg-rose-50/20">錯誤選擇 15cm 尺，或無法說出選擇原因。</td>
+                <td class="p-3 bg-amber-50/20">選擇 20cm 尺，但原因說明不清楚或邏輯有誤。</td>
+                <td class="p-3 bg-blue-50/20">能選擇 20cm 尺，並能指出 15cm 尺伸出 14cm 後桌上剩餘長度太短。</td>
+                <td class="p-3 bg-emerald-50/20 font-medium text-slate-800">正確選擇 20cm 尺，並清楚解釋：若用 15cm 尺伸出 14cm，桌面只剩 1cm，手部無法按緊固定；選用 20cm 尺則桌上仍留有 6cm，足夠固定。</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-bold text-slate-800 bg-slate-50">2. 訂立伸出長度<br><span class="text-[10px] text-slate-400 font-normal">(探究規劃)</span></td>
+                <td class="p-3 bg-rose-50/20">訂立的長度不合理（例如超出尺子長度、長度重複或無規律）。</td>
+                <td class="p-3 bg-amber-50/20">能訂立 3 個長度，但數值間距不均勻或排序混亂。</td>
+                <td class="p-3 bg-blue-50/20">能訂立 3 個合理的伸出長度（如 8cm, 10cm, 12cm），並按長度遞增排列。</td>
+                <td class="p-3 bg-emerald-50/20 font-medium text-slate-800">能訂立 3 個非常合理且間距適中的長度（如 6cm, 8cm, 11cm），與 14cm 形成良好的對比梯級。</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-bold text-slate-800 bg-slate-50">3. 桌上尺子固定<br><span class="text-[10px] text-slate-400 font-normal">(操作技巧)</span></td>
+                <td class="p-3 bg-rose-50/20">手沒有按住桌上的尺，或按壓位置不正確，導致尺子整把振動跳動並產生雜音。</td>
+                <td class="p-3 bg-amber-50/20">只用一隻手指按住尺子局部，測試時尺子仍有輕微鬆動或晃動。</td>
+                <td class="p-3 bg-blue-50/20">能用手按住放在桌上的直尺部分，尺子基本保持穩定。</td>
+                <td class="p-3 bg-emerald-50/20 font-medium text-slate-800">用手掌及手指完全壓緊桌上直尺的全部，能有效防止整把直尺振動，發聲穩定無雜音。</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-bold text-slate-800 bg-slate-50">4. 撥動力度控制<br><span class="text-[10px] text-slate-400 font-normal">(控制變因)</span></td>
+                <td class="p-3 bg-rose-50/20">每次撥動力度差異極大，或過度用力導致直尺劇烈撞擊桌面。</td>
+                <td class="p-3 bg-amber-50/20">撥動力度不太穩定，偶爾忽大忽小，影響音調判斷。</td>
+                <td class="p-3 bg-blue-50/20">每次撥動直尺的力度基本保持相同，能做到公平測試。</td>
+                <td class="p-3 bg-emerald-50/20 font-medium text-slate-800">每次撥動力度穩定且一致，動作熟練，能準確控制聲音大小不干擾音調聽辨。</td>
+              </tr>
+              <tr>
+                <td class="p-3 font-bold text-slate-800 bg-slate-50">5. 數據記錄與結論<br><span class="text-[10px] text-slate-400 font-normal">(數據整理與分析)</span></td>
+                <td class="p-3 bg-rose-50/20">記錄多處錯誤，且結論完全錯誤或未能完成。</td>
+                <td class="p-3 bg-amber-50/20">能記錄部分數據，但結論填寫有欠完整或混淆振動快慢與音調。</td>
+                <td class="p-3 bg-blue-50/20">數據記錄正確，能正確寫出伸出越短音調越高、伸出越長音調越低的關係。</td>
+                <td class="p-3 bg-emerald-50/20 font-medium text-slate-800">數據記錄完全準確，並能精準歸納：振動部分越短 → 振動越快 → 音調越高；反之亦然。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="p-4 bg-slate-50 border-t border-slate-200 text-right">
+        <button id="closeRubricFooterBtn" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs">我明白了</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* 核心應用狀態 */
+    const STORAGE_KEY = 'science_ruler_scores_v1';
+    let assessmentRecords = [];
+    let currentEditingId = null;
+    let scores = { q1: 0, q2: 0, q3: 0, q4: 0, q5: 0 };
+    let isRecording = false;
+    let recognition = null;
+
+    /* 中文數字映射表 */
+    const chineseNumMap = {
+      '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5,
+      '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+      '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9
+    };
+
+    // 初始化語音辨識
+    function initSpeechEngine() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const badge = document.getElementById('speechSupportBadge');
+
+      if (!SpeechRecognition) {
+        badge.className = "hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200";
+        badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> 瀏覽器不支援 Web Speech';
+        showToast('此瀏覽器未啟用 Web Speech API，建議使用 Chrome 或 Edge 進行話音輸入。', 'warning');
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = document.getElementById('voiceLangSelect').value;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        updateMicUI(true);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech error:', event.error);
+        if (event.error === 'not-allowed') {
+          showToast('請允許麥克風權限以使用語音登分功能。', 'error');
+        }
+        stopRecording();
+      };
+
+      recognition.onend = () => {
+        if (isRecording) {
+          // 若意外中斷則嘗試重新保持錄音，若正常停止則更新 UI
+          stopRecording();
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        const currentText = finalTranscript || interimTranscript;
+        if (currentText.trim()) {
+          document.getElementById('speechLiveTranscript').textContent = currentText;
+          // 即時使用規則引擎解析字串
+          parseVoiceTranscript(currentText);
+        }
+      };
+    }
+
+    // 更新麥克風圖示與外觀
+    function updateMicUI(active) {
+      const btn = document.getElementById('toggleRecordBtn');
+      const micIcon = document.getElementById('micIcon');
+      const statusText = document.getElementById('recordStatus');
+
+      if (active) {
+        btn.classList.add('bg-rose-600', 'hover:bg-rose-500', 'recording-pulse');
+        btn.classList.remove('bg-indigo-500', 'hover:bg-indigo-400');
+        micIcon.className = "fa-solid fa-stop";
+        statusText.innerHTML = '<span class="text-rose-300 font-bold animate-pulse">● 正在聆聽老師話音...（完成請再按一次）</span>';
+      } else {
+        btn.classList.remove('bg-rose-600', 'hover:bg-rose-500', 'recording-pulse');
+        btn.classList.add('bg-indigo-500', 'hover:bg-indigo-400');
+        micIcon.className = "fa-solid fa-microphone";
+        statusText.textContent = '按一下麥克風開始說話';
+      }
+    }
+
+    function startRecording() {
+      if (!recognition) initSpeechEngine();
+      if (!recognition) return;
+      try {
+        recognition.lang = document.getElementById('voiceLangSelect').value;
+        recognition.start();
+      } catch (err) {
+        console.warn('Speech restart error', err);
+      }
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      updateMicUI(false);
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+    }
+
+    // 智慧語音解析引擎：自動拆解姓名、班別、學號、5 個分數與接續之評語
+    function parseVoiceTranscript(text) {
+      if (!text || text.length < 2) return;
+
+      let recognizedFields = 0;
+      let cleaned = text.replace(/，|,|。|\.|\?|？|、/g, ' ');
+
+      // 1. 班別比對 (例如: 4A, 4B, 四甲, 四乙, 4-A, 4年A班)
+      const classRegex = /([1-6一二三四五六])\s*(?:年級)?\s*([A-Za-z甲乙丙丁戊己])/i;
+      const classMatch = cleaned.match(classRegex);
+      if (classMatch) {
+
+    function parseVoiceTranscript(text) {
+      if (!text || text.length < 2) return;
+
+      let recognizedFields = 0;
+      let cleaned = text.replace(/，|,|。|\.|\?|？|、|分/g, ' ');
+
+      // 1. 班別比對 (例如: 4A, 4B, 四甲, 四乙, 4-A, 4年A班)
+      const classRegex = /([1-6一二三四五六])\s*(?:年級)?\s*([A-Za-z甲乙丙丁戊己])/i;
+      const classMatch = cleaned.match(classRegex);
+      if (classMatch) {
+        let grade = classMatch[1];
+        if (chineseNumMap[grade]) grade = chineseNumMap[grade];
+        let sec = classMatch[2].toUpperCase();
+        document.getElementById('inputClass').value = `${grade}${sec}`;
+        recognizedFields++;
+      }
+
+      // 2. 學號比對 (例如: 12號, 5號, 學號十二, 號數 24)
+      const numRegex = /(?:學號|號數|座號)?\s*([0-9]{1,2}|[一二兩三四五六七八九十百]+)\s*號/i;
+      const numMatch = cleaned.match(numRegex);
+      if (numMatch) {
+        const rawNum = numMatch[1];
+        const parsedNo = parseChineseOrArabicNumber(rawNum);
+        if (parsedNo > 0 && parsedNo <= 60) {
+          document.getElementById('inputNumber').value = parsedNo;
+          recognizedFields++;
+        }
+      }
+
+      // 3. 分數序列提取 (尋找 5 個 1~4 的數字)
+      // 比對「4分 3分 4分 3分 4分」或「4 3 4 3 4」等格式
+      const scoreWordRegex = /([1-4一二兩三四])\s*(?:分)?\s+([1-4一二兩三四])\s*(?:分)?\s+([1-4一二兩三四])\s*(?:分)?\s+([1-4一二兩三四])\s*(?:分)?\s+([1-4一二兩三四])\s*(?:分)?/;
+      const scoreMatch = cleaned.match(scoreWordRegex);
+
+      let foundScores = false;
+      let scoreMatchEndIndex = -1;
+
+      if (scoreMatch) {
+        const s1 = parseChineseOrArabicNumber(scoreMatch[1]);
+        const s2 = parseChineseOrArabicNumber(scoreMatch[2]);
+        const s3 = parseChineseOrArabicNumber(scoreMatch[3]);
+        const s4 = parseChineseOrArabicNumber(scoreMatch[4]);
+        const s5 = parseChineseOrArabicNumber(scoreMatch[5]);
+
+        if (s1 && s2 && s3 && s4 && s5) {
+          scores.q1 = s1;
+          scores.q2 = s2;
+          scores.q3 = s3;
+          scores.q4 = s4;
+          scores.q5 = s5;
+          syncScoreUI();
+          recognizedFields += 5;
+          foundScores = true;
+          scoreMatchEndIndex = scoreMatch.index + scoreMatch[0].length;
+        }
+      } else {
+        // 備用方案：尋找末端或獨立的 5 個合法分數
+        const words = cleaned.split(/\s+/).filter(Boolean);
+        const possibleScores = [];
+        for (const w of words) {
+          const val = parseChineseOrArabicNumber(w.replace(/分$/, ''));
+          if (val >= 1 && val <= 4) {
+            possibleScores.push(val);
+          }
+        }
+        if (possibleScores.length >= 5) {
+          const targetScores = possibleScores.slice(0, 5);
+          scores.q1 = targetScores[0];
+          scores.q2 = targetScores[1];
+          scores.q3 = targetScores[2];
+          scores.q4 = targetScores[3];
+          scores.q5 = targetScores[4];
+          syncScoreUI();
+          recognizedFields += 5;
+          foundScores = true;
+        }
+      }
+
+      // 4. 評語提取 (在 5 個分數之後說出的內容，或包含「評語/備註/表現」後的文字)
+      let commentPart = '';
+      const explicitCommentMatch = text.match(/(?:評語|備註|意見|評價|觀察)(?:係|是|為|：|:)?\s*(.+)$/i);
+
+      if (explicitCommentMatch) {
+        commentPart = explicitCommentMatch[1].trim();
+      } else if (foundScores && scoreMatchEndIndex !== -1 && scoreMatchEndIndex < cleaned.length) {
+        // 從 5 個分數後面的剩餘文本抓取
+        const remainder = cleaned.substring(scoreMatchEndIndex).trim();
+        // 濾除多餘標點或口頭語
+        if (remainder && remainder.length > 0) {
+          commentPart = remainder;
+        }
+      }
+
+      if (commentPart) {
+        // 檢查是否為「沒有 / 無 / 冇 / 沒有評語」等字眼
+        const noCommentRegex = /^(沒有|無|冇|沒有評語|冇評語|無評語|冇嘢|沒|none|na|nil)$/i;
+        const cleanComment = commentPart.replace(/^[，。、\s]+|[，。、\s]+$/g, '');
+        if (noCommentRegex.test(cleanComment)) {
+          document.getElementById('inputComment').value = '沒有';
+        } else {
+          document.getElementById('inputComment').value = cleanComment;
+        }
+        recognizedFields++;
+      }
+
+      // 5. 姓名分析 (排除班別、學號、數字關鍵字及評語後，抓取剩餘中文字作為姓名)
+      if (!document.getElementById('inputName').value.trim()) {
+        const textBeforeScores = (scoreMatch && scoreMatch.index) ? cleaned.substring(0, scoreMatch.index) : cleaned;
+        const nameCandidates = textBeforeScores
+          .replace(/[0-9]/g, '')
+          .replace(/[一二三四五六七八九十甲乙丙丁]/g, '')
+          .replace(/(?:學生|考生|班別|學號|號數|座號|分|第一|第二|第三|第四|第五|評語|備註)/g, '')
+          .trim()
+          .split(/\s+/);
+        
+        for (let candidate of nameCandidates) {
+          // 普遍中文姓名長度為 2~4 字
+          if (/^[\u4e00-\u9fa5]{2,4}$/.test(candidate)) {
+            document.getElementById('inputName').value = candidate;
+            recognizedFields++;
+            break;
+          }
+        }
+      }
+
+      if (recognizedFields >= 2) {
+        document.getElementById('aiParsedBadge').classList.remove('hidden');
+      }
+    }
+
+    // 中文/阿拉伯數字轉換 helper
+    function parseChineseOrArabicNumber(str) {
+      if (!str) return NaN;
+      str = str.trim();
+      if (!isNaN(parseInt(str))) return parseInt(str);
+      if (str.length === 1 && chineseNumMap[str] !== undefined) {
+        return chineseNumMap[str];
+      }
+      if (str === '十') return 10;
+      if (str.startsWith('十') && str.length === 2) {
+        return 10 + (chineseNumMap[str[1]] || 0);
+      }
+      if (str.endsWith('十') && str.length === 2) {
+        return (chineseNumMap[str[0]] || 1) * 10;
+      }
+      return NaN;
+    }
+
+    // 更新 5 個 Rubric 按鈕的選取狀態
+    function syncScoreUI() {
+      ['q1', 'q2', 'q3', 'q4', 'q5'].forEach(q => {
+        const val = scores[q];
+        const group = document.querySelector(`.score-btn-group[data-q="${q}"]`);
+        const badge = document.getElementById(`badge${q.toUpperCase()}`);
+
+        badge.textContent = `${val} / 4 分`;
+        badge.className = val > 0 ? "text-indigo-600 font-bold" : "text-slate-400 font-normal";
+
+        if (group) {
+          const buttons = group.querySelectorAll('button');
+          buttons.forEach(btn => {
+            const btnVal = parseInt(btn.getAttribute('data-val'));
+            if (btnVal === val) {
+              btn.className = "py-1.5 text-xs rounded-lg font-bold text-white bg-indigo-600 shadow-sm transition scale-105 border-indigo-600";
+            } else {
+              btn.className = "py-1.5 text-xs rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-100 bg-white transition";
+            }
+          });
+        }
+      });
+
+      calculateTotal();
+    }
+
+    // 自動計算總分與等級判定
+    function calculateTotal() {
+      const total = scores.q1 + scores.q2 + scores.q3 + scores.q4 + scores.q5;
+      document.getElementById('totalScorePreview').innerHTML = `${total} <span class="text-xs font-medium text-slate-500">/ 20 分</span>`;
+
+      const levelEl = document.getElementById('performanceLevel');
+      if (total === 0) {
+        levelEl.textContent = '尚未完成評分';
+        levelEl.className = 'text-xs text-slate-400';
+      } else if (total >= 17) {
+        levelEl.textContent = '等級：優異 (Excellent)';
+        levelEl.className = 'text-xs font-bold text-emerald-600';
+      } else if (total >= 14) {
+        levelEl.textContent = '等級：良好 / 滿意 (Good)';
+        levelEl.className = 'text-xs font-bold text-blue-600';
+      } else if (total >= 10) {
+        levelEl.textContent = '等級：基礎 (Basic)';
+        levelEl.className = 'text-xs font-bold text-amber-600';
+      } else {
+        levelEl.textContent = '等級：需加強 (Need Improvement)';
+        levelEl.className = 'text-xs font-bold text-rose-600';
+      }
+    }
+
+    // 儲存記錄至 localStorage
+    function saveCurrentRecord() {
+      const studentName = document.getElementById('inputName').value.trim();
+      const studentClass = document.getElementById('inputClass').value.trim();
+      const studentNo = document.getElementById('inputNumber').value.trim();
+      const comment = document.getElementById('inputComment').value.trim() || '沒有';
+
+      // 檢查必填項目
+      if (!studentName) {
+        showToast('請輸入或口述學生姓名！', 'error');
+        document.getElementById('inputName').focus();
+
+      // 檢查必填項目
+      if (!studentName) {
+        showToast('請輸入或口述學生姓名！', 'error');
+        document.getElementById('inputName').focus();
+        return;
+      }
+      if (!studentClass) {
+        showToast('請輸入或口述班別！', 'error');
+        document.getElementById('inputClass').focus();
+        return;
+      }
+
+      // 檢查 5 個題目是否已全數評分
+      const unrated = Object.entries(scores).filter(([k, v]) => v === 0);
+      if (unrated.length > 0) {
+        showToast(`尚有 ${unrated.length} 個評核重點未評分（分數需為 1~4 分）`, 'warning');
+        return;
+      }
+
+      const totalScore = scores.q1 + scores.q2 + scores.q3 + scores.q4 + scores.q5;
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      if (currentEditingId) {
+        // 編輯現有記錄
+        const idx = assessmentRecords.findIndex(r => r.id === currentEditingId);
+        if (idx !== -1) {
+          assessmentRecords[idx] = {
+            ...assessmentRecords[idx],
+            studentName,
+            studentClass,
+            studentNo,
+            q1: scores.q1,
+            q2: scores.q2,
+            q3: scores.q3,
+            q4: scores.q4,
+            q5: scores.q5,
+            comment,
+            totalScore,
+            updatedAt: dateStr
+          };
+          showToast(`已成功更新【${studentName}】的考評成績！`, 'success');
+        }
+      } else {
+        // 新增記錄
+        const newRecord = {
+          id: 'REC_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          studentName,
+          studentClass,
+          studentNo,
+          comment,
+          q1: scores.q1,
+          q2: scores.q2,
+          q3: scores.q3,
+          q4: scores.q4,
+          q5: scores.q5,
+          totalScore,
+          createdAt: dateStr
+        };
+        assessmentRecords.unshift(newRecord);
+        showToast(`已成功登錄【${studentName}】總分：${totalScore}/20 分！`, 'success');
+      }
+
+      persistAndRender();
+      resetForm();
+    }
+
+    function resetForm() {
+      document.getElementById('inputName').value = '';
+      document.getElementById('inputClass').value = '';
+      document.getElementById('inputNumber').value = '';
+      document.getElementById('inputComment').value = '';
+      scores = { q1: 0, q2: 0, q3: 0, q4: 0, q5: 0 };
+      currentEditingId = null;
+
+      document.getElementById('formModeText').textContent = '新考生';
+      document.getElementById('formModeText').className = 'text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded-full';
+      document.getElementById('saveBtnLabel').textContent = '儲存考生成績';
+      document.getElementById('speechLiveTranscript').textContent = '「請讀出：學生姓名、班別、學號，以及 5 個 1 至 4 的分數」';
+      document.getElementById('aiParsedBadge').classList.add('hidden');
+
+      syncScoreUI();
+    }
+
+    function editRecord(id) {
+      const rec = assessmentRecords.find(r => r.id === id);
+      if (!rec) return;
+
+      currentEditingId = rec.id;
+      document.getElementById('inputName').value = rec.studentName || '';
+      document.getElementById('inputClass').value = rec.studentClass || '';
+      document.getElementById('inputNumber').value = rec.studentNo || '';
+      document.getElementById('inputComment').value = rec.comment || '';
+
+      scores.q1 = rec.q1 || 0;
+      scores.q2 = rec.q2 || 0;
+      scores.q3 = rec.q3 || 0;
+      scores.q4 = rec.q4 || 0;
+      scores.q5 = rec.q5 || 0;
+
+      document.getElementById('formModeText').textContent = `編輯中 (${rec.studentName})`;
+      document.getElementById('formModeText').className = 'text-xs bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full';
+      document.getElementById('saveBtnLabel').textContent = '更新此筆考生成績';
+
+      syncScoreUI();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function deleteRecord(id) {
+      const rec = assessmentRecords.find(r => r.id === id);
+      const name = rec ? rec.studentName : '此學生';
+      // 依指引不使用 window.confirm，使用自訂 Toast 觸發與即時復原機制
+      assessmentRecords = assessmentRecords.filter(r => r.id !== id);
+      persistAndRender();
+      showToast(`已移除【${name}】之考評記錄。`, 'info');
+    }
+
+    function persistAndRender() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(assessmentRecords));
+      renderTable();
+      calculateStats();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('recordsTableBody');
+      const emptyState = document.getElementById('emptyState');
+      const filter = document.getElementById('searchInput').value.trim().toLowerCase();
+
+      const filtered = assessmentRecords.filter(r => {
+        if (!filter) return true;
+        return (r.studentName && r.studentName.toLowerCase().includes(filter)) ||
+               (r.studentClass && r.studentClass.toLowerCase().includes(filter)) ||
+               (r.studentNo && r.studentNo.toString().includes(filter));
+      });
+
+      document.getElementById('recordBadge').textContent = `${filtered.length} 筆`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      tbody.innerHTML = filtered.map(item => {
+        const isEditing = item.id === currentEditingId;
+        const totalBadgeClass = item.totalScore >= 16 
+          ? 'bg-emerald-100 text-emerald-800 font-black' 
+          : item.totalScore >= 12 
+            ? 'bg-blue-100 text-blue-800 font-bold' 
+            : 'bg-amber-100 text-amber-800 font-bold';
+
+        return `
+          <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${isEditing ? 'bg-amber-50/60' : ''}">
+            <td class="py-2.5 px-3 font-semibold text-slate-800">${escapeHtml(item.studentClass || '-')}</td>
+            <td class="py-2.5 px-2 text-slate-600">${escapeHtml(item.studentNo || '-')}</td>
+            <td class="py-2.5 px-3 font-bold text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
+              ${escapeHtml(item.studentName)}
+              ${isEditing ? '<span class="text-[10px] text-amber-600 bg-amber-100 px-1.5 rounded">編輯中</span>' : ''}
+            </td>
+            <td class="py-2.5 px-1.5 text-center font-medium ${getScoreColor(item.q1)}">${item.q1}</td>
+            <td class="py-2.5 px-1.5 text-center font-medium ${getScoreColor(item.q2)}">${item.q2}</td>
+            <td class="py-2.5 px-1.5 text-center font-medium ${getScoreColor(item.q3)}">${item.q3}</td>
+            <td class="py-2.5 px-1.5 text-center font-medium ${getScoreColor(item.q4)}">${item.q4}</td>
+            <td class="py-2.5 px-1.5 text-center font-medium ${getScoreColor(item.q5)}">${item.q5}</td>
+            <td class="py-2.5 px-2.5 text-center">
+              <span class="inline-block px-2 py-0.5 rounded-full text-xs ${totalBadgeClass}">
+                ${item.totalScore}
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-slate-600 max-w-[150px] truncate" title="${escapeHtml(item.comment || '沒有')}">
+              <span class="${item.comment === '沒有' || !item.comment ? 'text-slate-400 italic' : 'text-slate-700'}">
+                ${escapeHtml(item.comment || '沒有')}
+              </span>
+            </td>
+            <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+              <button onclick="editRecord('${item.id}')" class="p-1 px-2 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition" title="修改分數">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button onclick="deleteRecord('${item.id}')" class="p-1 px-2 text-rose-500 hover:bg-rose-50 rounded-lg font-medium transition" title="刪除記錄">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function getScoreColor(val) {
+      if (val === 4) return 'text-emerald-600 font-bold';
+      if (val === 3) return 'text-blue-600';
+      if (val === 2) return 'text-amber-600';
+      return 'text-rose-600 font-bold';
+    }
+
+    function calculateStats() {
+      const count = assessmentRecords.length;
+      document.getElementById('statStudentCount').textContent = count;
+
+      if (count === 0) {
+        document.getElementById('statAvgScore').textContent = '0.0';
+        document.getElementById('statMaxScore').textContent = '0';
+        document.getElementById('statPassRate').textContent = '0%';
+        return;
+      }
+
+      const totalSum = assessmentRecords.reduce((acc, r) => acc + (r.totalScore || 0), 0);
+      const avg = (totalSum / count).toFixed(1);
+      const max = Math.max(...assessmentRecords.map(r => r.totalScore || 0));
+      const excellentCount = assessmentRecords.filter(r => (r.totalScore || 0) >= 16).length;
+      const rate = Math.round((excellentCount / count) * 100);
+
+      document.getElementById('statAvgScore').textContent = avg;
+      document.getElementById('statMaxScore').textContent = max;
+      document.getElementById('statPassRate').textContent = `${rate}%`;
+    }
+
+    // 匯出專業 Excel (.xlsx) 表格
+    function exportToExcel() {
+      if (assessmentRecords.length === 0) {
+        showToast('目前尚無任何登分資料可匯出！', 'warning');
+        return;
+      }
+
+      // 建立適合學校存檔的 Excel 資料陣列
+      const excelData = assessmentRecords.map((item, index) => ({
+        '序號': index + 1,
+        '班別': item.studentClass || '',
+        '學號': item.studentNo || '',
+        '學生姓名': item.studentName || '',
+        '1. 工具選擇與理據 (滿分4)': item.q1,
+        '2. 訂立伸出長度 (滿分4)': item.q2,
+        '3. 桌上尺子固定 (滿分4)': item.q3,
+        '4. 撥動力度控制 (滿分4)': item.q4,
+        '5. 數據記錄與結論 (滿分4)': item.q5,
+        '總分 (滿分20)': item.totalScore,
+        '表現等級': getLevelString(item.totalScore),
+        '教師評語': item.comment || '沒有',
+        '評估日期': item.createdAt || item.updatedAt || ''
+      }));
+
+      // 加入試算表統計尾列
+      const count = assessmentRecords.length;
+      const totalSum = assessmentRecords.reduce((sum, r) => sum + r.totalScore, 0);
+      const avg = (totalSum / count).toFixed(1);
+
+      excelData.push({
+        '序號': '【班級平均】',
+        '班別': '',
+        '學號': '',
+        '學生姓名': `共 ${count} 名學生`,
+        '1. 工具選擇與理據 (滿分4)': '',
+        '2. 訂立伸出長度 (滿分4)': '',
+        '3. 桌上尺子固定 (滿分4)': '',
+        '4. 撥動力度控制 (滿分4)': '',
+        '5. 數據記錄與結論 (滿分4)': '',
+        '總分 (滿分20)': avg,
+        '表現等級': '全體平均',
+        '教師評語': '-',
+        '評估日期': ''
+      });
+
+      // 產生 WorkSheet
+      const ws = XLSX.utils.json_to_sheet(excelData);
+
+      // 設定欄寬美化
+      ws['!cols'] = [
+        { wch: 6 },  // 序號
+        { wch: 8 },  // 班別
+        { wch: 8 },  // 學號
+        { wch: 14 }, // 學生姓名
+        { wch: 22 }, // 1. 工具選擇
+        { wch: 20 }, // 2. 訂立長度
+        { wch: 20 }, // 3. 尺子固定
+        { wch: 20 }, // 4. 力度控制
+        { wch: 22 }, // 5. 數據記錄
+        { wch: 14 }, // 總分
+        { wch: 16 }, // 表現等級
+        { wch: 26 }, // 教師評語
+        { wch: 18 }  // 評估日期
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "直尺音調探究評分表");
+
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `科學科實作評估_直尺音調探究_${today}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
+      showToast(`已成功下載 Excel 檔案：${filename}`, 'success');
+    }
+
+    function exportToCSV() {
+      if (assessmentRecords.length === 0) {
+        showToast('尚無登分記錄可匯出！', 'warning');
+        return;
+      }
+      const headers = ['序號', '班別', '學號', '姓名', '1.工具選擇', '2.訂立長度', '3.尺子固定', '4.撥動力度', '5.數據結論', '總分', '表現等級', '教師評語', '評估日期'];
+      const rows = assessmentRecords.map((r, i) => [
+        i + 1,
+        `"${r.studentClass || ''}"`,
+        `"${r.studentNo || ''}"`,
+        `"${r.studentName || ''}"`,
+        r.q1,
+        r.q2,
+        r.q3,
+        r.q4,
+        r.q5,
+        r.totalScore,
+        `"${getLevelString(r.totalScore)}"`,
+        `"${(r.comment || '沒有').replace(/"/g, '""')}"`,
+        `"${r.createdAt || ''}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `科學評估登分備份_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('已匯出 CSV 格式備份檔！', 'success');
+    }
+
+    function getLevelString(score) {
+      if (score >= 17) return '4-優異';
+      if (score >= 14) return '3-滿意';
+      if (score >= 10) return '2-基礎';
+      return '1-需改進';
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('statusToast');
+      toast.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-800', 'border-emerald-200', 'bg-rose-50', 'text-rose-800', 'border-rose-200', 'bg-amber-50', 'text-amber-800', 'border-amber-200', 'bg-indigo-50', 'text-indigo-800', 'border-indigo-200');
+
+      let icon = 'fa-info-circle';
+      if (type === 'success') {
+        toast.classList.add('bg-emerald-50', 'text-emerald-800', 'border', 'border-emerald-200');
+        icon = 'fa-circle-check';
+      } else if (type === 'error') {
+        toast.classList.add('bg-rose-50', 'text-rose-800', 'border', 'border-rose-200');
+        icon = 'fa-triangle-exclamation';
+      } else if (type === 'warning') {
+        toast.classList.add('bg-amber-50', 'text-amber-800', 'border', 'border-amber-200');
+        icon = 'fa-triangle-exclamation';
+      } else {
+        toast.classList.add('bg-indigo-50', 'text-indigo-800', 'border', 'border-indigo-200');
+      }
+
+      toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 4000);
+    }
+
+    function escapeHtml(string) {
+      return String(string || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // 綁定頁面互動事件
+    window.onload = function () {
+      // 讀取 localStorage 存檔
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          assessmentRecords = JSON.parse(saved);
+        }
+      } catch (err) {
+        console.error('Failed to parse cached records', err);
+        assessmentRecords = [];
+      }
+
+      persistAndRender();
+      initSpeechEngine();
+
+      // 語音切換按鈕
+      document.getElementById('toggleRecordBtn').addEventListener('click', () => {
+        if (isRecording) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      });
+
+      // 語言更換時自動同步
+      document.getElementById('voiceLangSelect').addEventListener('change', () => {
+        if (isRecording) {
+          stopRecording();
+          startRecording();
+        }
+      });
+
+      // 評分按鈕群組點選監聽
+      document.querySelectorAll('.score-btn-group').forEach(group => {
+        group.addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          const q = group.getAttribute('data-q');
+          const val = parseInt(btn.getAttribute('data-val'));
+          scores[q] = val;
+          syncScoreUI();
+        });
+      });
+
+      // 快捷評語標籤點選監聽
+      document.querySelectorAll('.quick-comment-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const commentBox = document.getElementById('inputComment');
+          const text = chip.textContent.trim();
+          if (text === '沒有') {
+            commentBox.value = '沒有';
+          } else {
+            if (commentBox.value.trim() && commentBox.value.trim() !== '沒有') {
+              commentBox.value += '，' + text;
+            } else {
+              commentBox.value = text;
+            }
+          }
+        });
+      });
+
+      // 儲存與重設
+      document.getElementById('saveRecordBtn').addEventListener('click', saveCurrentRecord);
+      document.getElementById('clearFormBtn').addEventListener('click', resetForm);
+
+      // 匯出按鈕
+      document.getElementById('exportExcelBtn').addEventListener('click', exportToExcel);
+      document.getElementById('quickExportCsvBtn').addEventListener('click', exportToCSV);
+
+      // 搜尋與篩選
+      document.getElementById('searchInput').addEventListener('input', renderTable);
+
+      // 全部清除按鈕
+      document.getElementById('clearAllBtn').addEventListener('click', () => {
+        if (assessmentRecords.length === 0) {
+          showToast('目前清單已是空的。', 'info');
+          return;
+        }
+        assessmentRecords = [];
+        persistAndRender();
+        resetForm();
+        showToast('已清空所有學生登分記錄。', 'info');
+      });
+
+      // Rubric 評分標準對照彈窗
+      const modal = document.getElementById('rubricModal');
+      document.getElementById('openRubricModalBtn').addEventListener('click', () => modal.classList.remove('hidden'));
+      document.getElementById('closeRubricModalBtn').addEventListener('click', () => modal.classList.add('hidden'));
+      document.getElementById('closeRubricFooterBtn').addEventListener('click', () => modal.classList.add('hidden'));
+
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.add('hidden');
+      });
+    };
+  </script>
+</body>
+</html>
